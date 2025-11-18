@@ -17,6 +17,16 @@ interface SplitImage {
 const splitImages = ref<SplitImage[]>([])
 const zoomLevel = ref(25) // Default 49% (2 per row)
 
+// Import progress tracking
+const isImporting = ref(false)
+const importProgress = ref({ current: 0, total: 0 })
+const shouldStopImport = ref(false)
+
+// Download progress tracking
+const isDownloading = ref(false)
+const downloadProgress = ref({ current: 0, total: 0 })
+const shouldStopDownload = ref(false)
+
 // Checkbox state
 const allChecked = computed({
   get: () => {
@@ -42,9 +52,19 @@ const checkedCount = computed(() => {
 })
 
 const downloadButtonText = computed(() => {
+  if (isDownloading.value) {
+    return `${downloadProgress.value.current} / ${downloadProgress.value.total}`
+  }
   const count = checkedCount.value
   if (count === 0) return 'Download Selected'
   return `Download ${count} Selected`
+})
+
+const importButtonText = computed(() => {
+  if (isImporting.value) {
+    return `${importProgress.value.current} / ${importProgress.value.total}`
+  }
+  return 'Add Images'
 })
 
 // Calculate max height based on zoom level
@@ -71,8 +91,9 @@ const splitImageInHalf = (imageData: string, fileName: string): Promise<SplitIma
         const leftCanvas = document.createElement('canvas')
         leftCanvas.width = halfWidth
         leftCanvas.height = height
-        const leftCtx = leftCanvas.getContext('2d')
+        const leftCtx = leftCanvas.getContext('2d', { alpha: false })
         if (leftCtx) {
+          leftCtx.imageSmoothingEnabled = false
           leftCtx.drawImage(img, 0, 0, halfWidth, height, 0, 0, halfWidth, height)
         }
 
@@ -80,16 +101,17 @@ const splitImageInHalf = (imageData: string, fileName: string): Promise<SplitIma
         const rightCanvas = document.createElement('canvas')
         rightCanvas.width = halfWidth
         rightCanvas.height = height
-        const rightCtx = rightCanvas.getContext('2d')
+        const rightCtx = rightCanvas.getContext('2d', { alpha: false })
         if (rightCtx) {
+          rightCtx.imageSmoothingEnabled = false
           rightCtx.drawImage(img, halfWidth, 0, halfWidth, height, 0, 0, halfWidth, height)
         }
 
         resolve({
           leftHalf: leftCanvas.toDataURL('image/jpeg', 0.92),
           rightHalf: rightCanvas.toDataURL('image/jpeg', 0.92),
-          leftHalfOriginal: leftCanvas.toDataURL('image/jpeg', 0.95),
-          rightHalfOriginal: rightCanvas.toDataURL('image/jpeg', 0.95),
+          leftHalfOriginal: leftCanvas.toDataURL('image/png'),
+          rightHalfOriginal: rightCanvas.toDataURL('image/png'),
           originalName: fileName,
           leftRotation: 0,
           rightRotation: 0,
@@ -104,8 +126,9 @@ const splitImageInHalf = (imageData: string, fileName: string): Promise<SplitIma
         const topCanvas = document.createElement('canvas')
         topCanvas.width = width
         topCanvas.height = halfHeight
-        const topCtx = topCanvas.getContext('2d')
+        const topCtx = topCanvas.getContext('2d', { alpha: false })
         if (topCtx) {
+          topCtx.imageSmoothingEnabled = false
           topCtx.drawImage(img, 0, 0, width, halfHeight, 0, 0, width, halfHeight)
         }
 
@@ -113,16 +136,17 @@ const splitImageInHalf = (imageData: string, fileName: string): Promise<SplitIma
         const bottomCanvas = document.createElement('canvas')
         bottomCanvas.width = width
         bottomCanvas.height = halfHeight
-        const bottomCtx = bottomCanvas.getContext('2d')
+        const bottomCtx = bottomCanvas.getContext('2d', { alpha: false })
         if (bottomCtx) {
+          bottomCtx.imageSmoothingEnabled = false
           bottomCtx.drawImage(img, 0, halfHeight, width, halfHeight, 0, 0, width, halfHeight)
         }
 
         resolve({
           leftHalf: topCanvas.toDataURL('image/jpeg', 0.92),
           rightHalf: bottomCanvas.toDataURL('image/jpeg', 0.92),
-          leftHalfOriginal: topCanvas.toDataURL('image/jpeg', 0.95),
-          rightHalfOriginal: bottomCanvas.toDataURL('image/jpeg', 0.95),
+          leftHalfOriginal: topCanvas.toDataURL('image/png'),
+          rightHalfOriginal: bottomCanvas.toDataURL('image/png'),
           originalName: fileName,
           leftRotation: 0,
           rightRotation: 0,
@@ -136,32 +160,76 @@ const splitImageInHalf = (imageData: string, fileName: string): Promise<SplitIma
   })
 }
 
+// Helper to process a single file
+const processFile = (file: File): Promise<SplitImage> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = async (e) => {
+      try {
+        const imageData = e.target?.result as string
+        const split = await splitImageInHalf(imageData, file.name)
+        resolve(split)
+      } catch (error) {
+        reject(error)
+      }
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
+// Stop the import process
+const stopImport = () => {
+  shouldStopImport.value = true
+}
+
 const handleFileSelect = async (event: Event) => {
   const target = event.target as HTMLInputElement
   const files = target.files
 
-  if (files) {
-    const fileArray = Array.from(files).filter((file) => file.type.startsWith('image/'))
+  if (!files || files.length === 0) return
 
-    // Process files one at a time with small delays to keep UI responsive
-    for (let i = 0; i < fileArray.length; i++) {
-      const file = fileArray[i]
-      if (!file) continue
+  const fileArray = Array.from(files).filter((file) => file.type.startsWith('image/'))
 
-      const reader = new FileReader()
+  if (fileArray.length === 0) return
 
-      reader.onload = async (e) => {
-        const imageData = e.target?.result as string
-        const split = await splitImageInHalf(imageData, file.name)
-        splitImages.value.push(split)
-      }
+  isImporting.value = true
+  shouldStopImport.value = false
+  importProgress.value = { current: 0, total: fileArray.length }
 
-      reader.readAsDataURL(file) // Allow UI to breathe between processing files
-      if (i % 2 === 1) {
-        await new Promise((resolve) => setTimeout(resolve, 0))
-      }
+  // Process files in small batches to keep UI responsive
+  const batchSize = 2
+
+  for (let i = 0; i < fileArray.length; i += batchSize) {
+    // Check if user requested to stop
+    if (shouldStopImport.value) {
+      break
+    }
+
+    const batch = fileArray.slice(i, i + batchSize)
+
+    // Process batch in parallel
+    const results = await Promise.all(batch.map((file) => processFile(file)))
+
+    // Add results to the array
+    splitImages.value.push(...results)
+
+    // Update progress
+    importProgress.value.current = Math.min(i + batchSize, fileArray.length)
+
+    // Give the UI time to update between batches
+    if (i + batchSize < fileArray.length) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
     }
   }
+
+  // Keep the progress indicator visible for a moment before hiding
+  await new Promise((resolve) => setTimeout(resolve, 500))
+  isImporting.value = false
+  shouldStopImport.value = false
+
+  // Reset the file input so the same files can be selected again if needed
+  target.value = ''
 }
 
 const removeImagePair = (index: number) => {
@@ -206,7 +274,7 @@ const downloadHalf = (imageData: string, rotation: number, fileName: string, sid
   const img = new Image()
   img.onload = () => {
     const canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d')
+    const ctx = canvas.getContext('2d', { alpha: false })
 
     if (!ctx) return
 
@@ -221,12 +289,15 @@ const downloadHalf = (imageData: string, rotation: number, fileName: string, sid
       canvas.height = img.height
     }
 
+    // Disable image smoothing for better quality
+    ctx.imageSmoothingEnabled = false
+
     // Apply rotation
     ctx.translate(canvas.width / 2, canvas.height / 2)
     ctx.rotate((rotation * Math.PI) / 180)
     ctx.drawImage(img, -img.width / 2, -img.height / 2)
 
-    // Convert to blob and download
+    // Convert to blob and download as PNG for maximum quality
     canvas.toBlob(
       (blob) => {
         if (!blob) return
@@ -239,30 +310,60 @@ const downloadHalf = (imageData: string, rotation: number, fileName: string, sid
         URL.revokeObjectURL(url)
       },
       'image/jpeg',
-      0.95,
+      0.98,
     )
   }
 
   img.src = imageData
 }
 
+// Stop the download process
+const stopDownload = () => {
+  shouldStopDownload.value = true
+}
+
 // Download all checked halves
 const downloadChecked = async () => {
+  // Count total items to download
+  const total = splitImages.value.reduce((count, img) => {
+    return count + (img.leftChecked ? 1 : 0) + (img.rightChecked ? 1 : 0)
+  }, 0)
+
+  if (total === 0) return
+
+  isDownloading.value = true
+  shouldStopDownload.value = false
+  downloadProgress.value = { current: 0, total }
+
   for (let i = 0; i < splitImages.value.length; i++) {
+    // Check if user requested to stop
+    if (shouldStopDownload.value) {
+      break
+    }
+
     const img = splitImages.value[i]
     if (!img) continue
 
     if (img.leftChecked) {
+      if (shouldStopDownload.value) break
       downloadHalf(img.leftHalfOriginal, img.leftRotation, img.originalName, 'left')
+      downloadProgress.value.current++
       // Small delay to prevent overwhelming the browser
       await new Promise((resolve) => setTimeout(resolve, 100))
     }
 
     if (img.rightChecked) {
+      if (shouldStopDownload.value) break
       downloadHalf(img.rightHalfOriginal, img.rightRotation, img.originalName, 'right')
+      downloadProgress.value.current++
       await new Promise((resolve) => setTimeout(resolve, 100))
     }
   }
+
+  // Keep the progress indicator visible for a moment before hiding
+  await new Promise((resolve) => setTimeout(resolve, 500))
+  isDownloading.value = false
+  shouldStopDownload.value = false
 }
 </script>
 
@@ -272,8 +373,12 @@ const downloadChecked = async () => {
       <h1>Half-Frame Film Splitter</h1>
 
       <div class="upload-section">
-        <label for="file-input" class="upload-button">
-          <span>Add Images</span>
+        <!-- Add Images button (normal state) -->
+        <label v-if="!isImporting" for="file-input" class="upload-button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+          </svg>
+          <span>{{ importButtonText }}</span>
           <input
             id="file-input"
             type="file"
@@ -284,16 +389,55 @@ const downloadChecked = async () => {
           />
         </label>
 
-        <button v-if="splitImages.length > 0" @click="clearAll" class="clear-button">
-          Clear All
+        <!-- Stop button during import -->
+        <button v-if="isImporting" @click="stopImport" class="upload-button importing">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+          </svg>
+          <span class="progress-text">{{ importButtonText }}</span>
+          <div class="progress-bar-container">
+            <div
+              class="progress-bar-fill"
+              :style="{ width: `${(importProgress.current / importProgress.total) * 100}%` }"
+            ></div>
+          </div>
+          <span class="stop-icon">✕</span>
         </button>
+
+        <button v-if="splitImages.length > 0" @click="clearAll" class="clear-button">
+          Remove All
+        </button>
+
+        <!-- Download button with integrated progress -->
         <button
-          v-if="splitImages.length > 0"
+          v-if="splitImages.length > 0 && !isDownloading"
           @click="downloadChecked"
           :disabled="!hasCheckedItems"
           class="download-button"
         >
-          {{ downloadButtonText }}
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
+          </svg>
+          <span>{{ downloadButtonText }}</span>
+        </button>
+
+        <!-- Stop button during download -->
+        <button
+          v-if="splitImages.length > 0 && isDownloading"
+          @click="stopDownload"
+          class="download-button downloading"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
+          </svg>
+          <span class="progress-text">{{ downloadButtonText }}</span>
+          <div class="progress-bar-container">
+            <div
+              class="progress-bar-fill"
+              :style="{ width: `${(downloadProgress.current / downloadProgress.total) * 100}%` }"
+            ></div>
+          </div>
+          <span class="stop-icon">✕</span>
         </button>
       </div>
 
@@ -399,12 +543,54 @@ h1 {
   border: none;
   letter-spacing: 0.025em;
   text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.upload-button.importing {
+  background-color: #d4a574;
+  color: #0a0a0a;
+  cursor: pointer;
+}
+
+.upload-button.importing:hover {
+  background-color: #c09563;
+}
+
+.upload-button.importing .stop-icon {
+  margin-left: auto;
+  font-weight: bold;
+  font-size: 1rem;
 }
 
 .upload-button:hover {
   background-color: #e6b886;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(212, 165, 116, 0.3);
+}
+
+.upload-button .progress-bar-container {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background-color: rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.upload-button .progress-bar-fill {
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.3);
+  transition: width 0.2s ease;
+}
+
+.upload-button .progress-text {
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
 }
 
 .file-input {
@@ -443,6 +629,27 @@ h1 {
   transition: all 0.2s ease;
   letter-spacing: 0.025em;
   text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.download-button.downloading {
+  background-color: #d4a574;
+  color: #0a0a0a;
+  cursor: pointer;
+}
+
+.download-button.downloading:hover {
+  background-color: #c09563;
+}
+
+.download-button.downloading .stop-icon {
+  margin-left: auto;
+  font-weight: bold;
+  font-size: 1rem;
 }
 
 .download-button:hover:not(:disabled) {
@@ -457,6 +664,27 @@ h1 {
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
+}
+
+.download-button .progress-bar-container {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background-color: rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.download-button .progress-bar-fill {
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.3);
+  transition: width 0.2s ease;
+}
+
+.download-button .progress-text {
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
 }
 
 .checkbox-label {
@@ -515,5 +743,76 @@ h1 {
   overflow-y: auto;
   flex: 1;
   align-content: flex-start;
+}
+
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+  .header-section {
+    padding: 1.25rem 1rem;
+  }
+
+  h1 {
+    font-size: 1.25rem;
+    margin-bottom: 1rem;
+  }
+
+  .upload-section {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .upload-button,
+  .clear-button,
+  .download-button {
+    padding: 0.75rem 1rem;
+    font-size: 0.8125rem;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .images-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .zoom-control {
+    width: 100%;
+  }
+
+  .zoom-slider {
+    flex: 1;
+  }
+
+  .preview-grid {
+    padding: 1rem;
+    gap: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .header-section {
+    padding: 1rem 0.75rem;
+  }
+
+  h1 {
+    font-size: 1.125rem;
+  }
+
+  .upload-button,
+  .clear-button,
+  .download-button {
+    width: 100%;
+    flex: none;
+  }
+
+  .preview-grid {
+    padding: 0.75rem;
+    gap: 0.75rem;
+  }
+
+  .images-info p {
+    font-size: 0.75rem;
+  }
 }
 </style>

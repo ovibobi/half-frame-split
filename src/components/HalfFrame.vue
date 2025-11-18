@@ -266,4 +266,44 @@ const containerStyle = computed(() => {
   font-family: 'Courier New', monospace;
   border: 1px solid #2a2a2a;
 }
+
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+  /* Make controls always visible on mobile for better usability */
+  .rotation-controls {
+    opacity: 1;
+  }
+
+  .download-btn {
+    opacity: 1;
+  }
+
+  .direction-btn,
+  .download-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .checkbox-container {
+    padding: 0.5rem;
+  }
+
+  .checkbox-container input[type='checkbox'] {
+    width: 19px;
+    height: 19px;
+  }
+}
+
+@media (max-width: 480px) {
+  .direction-btn,
+  .download-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .half-label {
+    font-size: 0.625rem;
+    padding: 0.3rem 0.5rem;
+  }
+}
 </style>

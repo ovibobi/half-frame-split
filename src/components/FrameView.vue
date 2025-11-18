@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { defineProps, ref, computed } from 'vue'
+import { defineProps, ref, computed, onMounted, onUnmounted } from 'vue'
 import HalfFrame from './HalfFrame.vue'
 
 interface Props {
@@ -28,12 +28,21 @@ const emit = defineEmits<{
 }>()
 
 const fullscreenSide = ref<'left' | 'right' | null>(null)
+const zoomLevel = ref(1)
+const panX = ref(0)
+const panY = ref(0)
 
 const toggleFullscreen = (side: 'left' | 'right') => {
   if (fullscreenSide.value === side) {
     fullscreenSide.value = null
+    zoomLevel.value = 1
+    panX.value = 0
+    panY.value = 0
   } else {
     fullscreenSide.value = side
+    zoomLevel.value = 1
+    panX.value = 0
+    panY.value = 0
   }
 }
 
@@ -45,13 +54,57 @@ const fullscreenImageStyle = computed(() => {
   const rotation =
     fullscreenSide.value === 'left' ? props.imagePair.leftRotation : props.imagePair.rightRotation
   return {
-    transform: `rotate(${rotation}deg)`,
+    transform: `translate(${panX.value}px, ${panY.value}px) rotate(${rotation}deg) scale(${zoomLevel.value})`,
   }
 })
 
 const toggleCheckbox = (side: 'left' | 'right') => {
   emit('toggleCheck', props.index, side)
 }
+
+const handleEscape = (event: KeyboardEvent) => {
+  if (event.key === 'Escape' && fullscreenSide.value !== null) {
+    fullscreenSide.value = null
+    zoomLevel.value = 1
+    panX.value = 0
+    panY.value = 0
+  }
+}
+
+const handleWheel = (event: WheelEvent) => {
+  if (fullscreenSide.value !== null) {
+    event.preventDefault()
+
+    const delta = event.deltaY > 0 ? -0.1 : 0.1
+    const newZoom = Math.max(0.5, Math.min(5, zoomLevel.value + delta))
+
+    if (newZoom !== zoomLevel.value) {
+      // Get mouse position relative to viewport center
+      const mouseX = event.clientX - window.innerWidth / 2
+      const mouseY = event.clientY - window.innerHeight / 2
+
+      // Calculate the zoom factor change
+      const zoomFactor = newZoom / zoomLevel.value
+
+      // Adjust pan to zoom towards mouse position
+      // The point under the mouse should stay in the same place
+      panX.value = mouseX + (panX.value - mouseX) * zoomFactor
+      panY.value = mouseY + (panY.value - mouseY) * zoomFactor
+
+      zoomLevel.value = newZoom
+    }
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleEscape)
+  window.addEventListener('wheel', handleWheel, { passive: false })
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleEscape)
+  window.removeEventListener('wheel', handleWheel)
+})
 </script>
 
 <template>
@@ -242,8 +295,8 @@ const toggleCheckbox = (side: 'left' | 'right') => {
 }
 
 .fullscreen-image {
-  max-width: 95vw;
-  max-height: 95vh;
+  max-width: min(95vw, 95vh);
+  max-height: min(95vw, 95vh);
   width: auto;
   height: auto;
   object-fit: contain;
@@ -343,5 +396,71 @@ const toggleCheckbox = (side: 'left' | 'right') => {
   background-color: rgba(230, 184, 134, 1);
   transform: scale(1.05);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+  .pair-header {
+    padding: 0.75rem 0.875rem;
+  }
+
+  .pair-name {
+    font-size: 0.75rem;
+  }
+
+  .remove-button {
+    width: 32px;
+    height: 32px;
+    font-size: 1.125rem;
+  }
+
+  .fullscreen-direction-btn {
+    width: 56px;
+    height: 56px;
+  }
+
+  .fullscreen-download-btn {
+    width: 56px;
+    height: 56px;
+  }
+
+  .fullscreen-direction-top,
+  .fullscreen-download-btn {
+    top: 20px;
+  }
+
+  .fullscreen-direction-right {
+    right: 20px;
+  }
+
+  .fullscreen-direction-bottom {
+    bottom: 20px;
+  }
+
+  .fullscreen-direction-left {
+    left: 20px;
+  }
+
+  .fullscreen-download-btn {
+    right: 20px;
+  }
+}
+
+@media (max-width: 480px) {
+  .pair-header {
+    padding: 0.625rem 0.75rem;
+  }
+
+  .pair-name {
+    font-size: 0.6875rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .remove-button {
+    width: 28px;
+    height: 28px;
+  }
 }
 </style>
