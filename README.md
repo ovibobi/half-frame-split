@@ -1,27 +1,24 @@
-# .
+# Half-Frame Film Splitter
 
-This template should help get you started developing with Vue 3 in Vite.
+A web application for splitting scanned half-frame film images into individual frames. Perfect for digitizing half-frame film photography where two vertical frames are captured on a standard 35mm horizontal frame.
 
-## Recommended IDE Setup
+## Features
 
-[VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
+- **Automatic Image Splitting**: Automatically detects image orientation and splits horizontally or vertically
+- **Batch Processing**: Import and process multiple images at once with progress tracking
+- **Image Rotation**: Rotate individual halves with directional controls (top, right, bottom, left)
+- **Fullscreen Preview**: Click any half to view in fullscreen with zoom and pan controls
+- **Selective Download**: Choose which frames to download with checkboxes
+- **Batch Download**: Download all selected frames with progress tracking
+- **Responsive Design**: Works on desktop and mobile devices
+- **Adjustable Grid**: Zoom slider to adjust thumbnail size
 
-## Recommended Browser Setup
+## How It Works
 
-- Chromium-based browsers (Chrome, Edge, Brave, etc.):
-  - [Vue.js devtools](https://chromewebstore.google.com/detail/vuejs-devtools/nhdogjmejiglipccpnnnanhbledajbpd) 
-  - [Turn on Custom Object Formatter in Chrome DevTools](http://bit.ly/object-formatters)
-- Firefox:
-  - [Vue.js devtools](https://addons.mozilla.org/en-US/firefox/addon/vue-js-devtools/)
-  - [Turn on Custom Object Formatter in Firefox DevTools](https://fxdx.dev/firefox-devtools-custom-object-formatters/)
-
-## Type Support for `.vue` Imports in TS
-
-TypeScript cannot handle type information for `.vue` imports by default, so we replace the `tsc` CLI with `vue-tsc` for type checking. In editors, we need [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) to make the TypeScript language service aware of `.vue` types.
-
-## Customize configuration
-
-See [Vite Configuration Reference](https://vite.dev/config/).
+1. **Add Images**: Upload one or more scanned film images
+2. **Auto-Split**: Images are automatically split into left/right or top/bottom halves
+3. **Rotate**: Use directional buttons to orient each frame correctly
+4. **Select & Download**: Check the frames you want and download them all at once
 
 ## Project Setup
 
@@ -52,3 +49,14 @@ npm run test:unit
 ```sh
 npm run lint
 ```
+
+## Technology Stack
+
+- **Vue 3**: Progressive JavaScript framework
+- **TypeScript**: Type-safe development
+- **Vite**: Fast build tool and dev server
+- **Vitest**: Unit testing framework
+
+## License
+
+MIT
